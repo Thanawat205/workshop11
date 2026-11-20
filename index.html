@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SmartLiving Property | ระบบจัดการสัญญาเช่าและเงินประกัน</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; font: 15px/1.55 Arial, sans-serif; background: #f4f6f8; color: #222; }
+    main { max-width: 1000px; margin: auto; }
+    header, section { padding: 22px 26px; border-radius: 10px; margin-bottom: 20px; }
+    header { background: #e8f4ed; }
+    section { background: #fff; box-shadow: 0 2px 8px #0000000d; }
+    h1 { color: #075b35; margin: 0; }
+    h2, h3 { margin: 0 0 10px; }
+    label { display: block; font-weight: bold; margin: 12px 0 5px; }
+    input, textarea { display: block; width: 100%; padding: 10px; border: 1px solid #b7b7b7; border-radius: 6px; font: inherit; }
+    textarea { min-height: 76px; resize: vertical; }
+    button { padding: 9px 13px; margin: 10px 6px 0 0; border: 0; border-radius: 6px; background: #075b35; color: white; font: inherit; font-weight: bold; cursor: pointer; }
+    button.secondary { background: #525f68; }
+    button.danger { background: #a22330; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    p, li { overflow-wrap: anywhere; }
+    .muted { color: #555; font-size: 14px; }
+    .error { color: #a22330; }
+    .success { color: #075b35; }
+    .record { padding: 14px; margin: 14px 0; border: 1px solid #ddd; border-radius: 6px; }
+    .record p { margin: 5px 0; white-space: pre-wrap; }
+    .action-form { margin-top: 14px; padding-top: 10px; border-top: 1px solid #ddd; }
+    @media (max-width: 600px) { body { padding: 12px; } header, section { padding: 16px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>SmartLiving Property</h1>
+    <p>ระบบจัดการสัญญาเช่าและเงินประกัน · Sepolia Testnet</p>
+    <button id="connect" type="button">Connect MetaMask</button>
+    <p id="wallet" class="muted" role="status">ยังไม่ได้เชื่อม Wallet</p>
+    <p id="balance" hidden></p>
+    <button id="withdraw" type="button" hidden>ถอนยอดที่ได้รับอนุมัติ</button>
+    <p id="walletMessage" role="status"></p>
+    <p class="muted">66073501 ธนวรรธ ไคล้สา</p>
+    <p class="muted">66062728 ศิกเษณย์ ศรุติสุต</p>
+  </header>
+
+  <section>
+    <h2>ค้นหาสัญญาเช่า</h2>
+    <form id="searchAgreement">
+      <label for="agreementId">Agreement ID</label>
+      <input id="agreementId" inputmode="numeric" placeholder="เช่น 1" required>
+      <button class="secondary">ดูสัญญาและประวัติการชำระ</button>
+    </form>
+    <p id="agreementMessage" role="status"></p>
+    <div id="agreementResult" aria-live="polite"></div>
+  </section>
+
+  <section>
+    <h2>ลงทะเบียนทรัพย์สิน</h2>
+    <form id="propertyForm">
+      <label for="name">ชื่อห้องหรือรหัสทรัพย์สิน</label>
+      <input id="name" placeholder="เช่น ห้อง A-101" required>
+      <label for="rent">ค่าเช่าต่องวด (ETH)</label>
+      <input id="rent" inputmode="decimal" placeholder="0.01" required>
+      <label for="deposit">เงินประกัน (ETH)</label>
+      <input id="deposit" inputmode="decimal" placeholder="0.02" required>
+      <button>ลงทะเบียนทรัพย์สิน</button>
+    </form>
+    <p id="propertyMessage" role="status"></p>
+  </section>
+
+  <section>
+    <h2>สร้างสัญญาเช่า</h2>
+    <form id="createForm">
+      <label for="propertyId">Property ID ของคุณ</label>
+      <input id="propertyId" inputmode="numeric" required>
+      <label for="tenant">Wallet ผู้เช่า</label>
+      <input id="tenant" placeholder="0x..." required>
+      <label for="arbitrator">Wallet ผู้ตัดสินข้อพิพาท</label>
+      <input id="arbitrator" placeholder="0x..." required>
+      <label for="startsAt">วันและเวลาเริ่มสัญญา</label>
+      <input id="startsAt" type="datetime-local" required>
+      <label for="endsAt">วันและเวลาสิ้นสุดสัญญา</label>
+      <input id="endsAt" type="datetime-local" required>
+      <p class="muted">ใช้เขตเวลาของเบราว์เซอร์ ตรวจวันและเวลาที่แสดงในสัญญาก่อนยืนยัน</p>
+      <label for="installments">จำนวนงวด</label>
+      <input id="installments" type="number" min="1" max="120" value="1" required>
+      <label for="terms">เงื่อนไขสัญญาและเงื่อนไขหักเงินประกัน</label>
+      <textarea id="terms" placeholder="ระบุวันชำระค่าเช่า เกณฑ์ตรวจห้อง และเกณฑ์หักเงินประกัน" required></textarea>
+      <p class="muted">เงื่อนไขและบันทึกการตรวจห้องเผยแพร่บนเชนสาธารณะ ควรใช้ข้อมูลสำหรับสาธิต</p>
+      <button>สร้างสัญญาเช่า</button>
+    </form>
+    <p id="createMessage" role="status"></p>
+  </section>
+</main>
+
+<script>
+  const INFURA_URL = "https://sepolia.infura.io/v3/fbe6510ef5b24166b46007975d04a463";
+  const CONTRACT_ADDRESS = "0x1dbaf5580ffd54235daa3b348410c7e9f850abfc";
+  const CHAIN_ID = 11155111n;
+  const ABI = [
+    "event PropertyRegistered(uint256 indexed propertyId, address indexed landlord)",
+    "event AgreementCreated(uint256 indexed agreementId, uint256 indexed propertyId)",
+    "function registerProperty(string name, uint256 rent, uint256 deposit) returns (uint256)",
+    "function createAgreement(tuple(uint256 propertyId, address tenant, address arbitrator, uint64 startsAt, uint64 endsAt, uint16 installments, string terms) input) returns (uint256)",
+    "function confirmAgreement(uint256 id)",
+    "function cancelUnfunded(uint256 id)",
+    "function fundDeposit(uint256 id) payable",
+    "function payRent(uint256 id) payable",
+    "function recordInspection(uint256 id, uint256 proposedRefund, string inspection)",
+    "function approveRefund(uint256 id)",
+    "function openDispute(uint256 id, string reason)",
+    "function resolveDispute(uint256 id, uint256 refund, string decision)",
+    "function withdraw(address recipient)",
+    "function withdrawable(address) view returns (uint256)",
+    "function getProperty(uint256 id) view returns (tuple(address landlord, string name, uint256 rent, uint256 securityDeposit))",
+    "function getAgreement(uint256 id) view returns (tuple(uint256 propertyId, address landlord, address tenant, address arbitrator, uint64 startsAt, uint64 endsAt, uint16 installments, string terms, uint256 rent, uint256 securityDeposit, uint256 depositHeld, bool landlordConfirmed, bool tenantConfirmed, uint8 status))",
+    "function getSettlement(uint256 id) view returns (tuple(uint256 proposedRefund, string inspection, string disputeReason, address disputedBy, uint256 finalRefund, string decision, address decidedBy))",
+    "function getPayments(uint256 id) view returns (tuple(uint256 amount, uint256 paidAt)[])"
+  ];
+  const STATUS = Object.freeze({ Pending: 0, Confirmed: 1, Funded: 2, Inspected: 3, Disputed: 4, Settled: 5, Cancelled: 6 });
+  const statusNames = ["รอการยืนยัน", "ยืนยันแล้ว · รอฝากเงินประกัน", "ฝากเงินประกันแล้ว", "ตรวจห้องแล้ว · รอผู้เช่าอนุมัติ", "อยู่ระหว่างพิจารณาข้อพิพาท", "จัดสรรเงินประกันแล้ว", "ยกเลิกแล้ว"];
+  const $ = id => document.getElementById(id);
+  const value = id => $(id).value.trim();
+  let readProvider;
+  let readContract;
+  let walletProvider;
+  let writeContract;
+  let account;
+  let sending = false;
+  let lookupSequence = 0;
+
+  function getReadContract() {
+    if (!window.ethers) throw new Error("โหลด ethers.js ไม่สำเร็จ");
+    if (INFURA_URL.includes("YOUR_INFURA_API_KEY") || !ethers.isAddress(CONTRACT_ADDRESS)) {
+      throw new Error("กรุณาตั้งค่า INFURA_URL และ CONTRACT_ADDRESS ใน index.html");
+    }
+    if (!readContract) {
+      readProvider = new ethers.JsonRpcProvider(INFURA_URL, "sepolia");
+      readContract = new ethers.Contract(CONTRACT_ADDRESS, ABI, readProvider);
+    }
+    return readContract;
+  }
+
+  function message(target, text, className = "") {
+    target.className = className;
+    target.textContent = text;
+  }
+
+  function addText(parent, tag, text, className = "") {
+    const element = document.createElement(tag);
+    message(element, text, className);
+    parent.append(element);
+    return element;
+  }
+
+  const errorText = error => error.reason || error.shortMessage || error.message;
+  const eth = amount => ethers.formatEther(amount) + " ETH";
+  const dateTime = seconds => new Date(Number(seconds) * 1000).toLocaleString("th-TH", { timeZoneName: "short" });
+  const same = address => account?.toLowerCase() === address.toLowerCase();
+
+  function positiveId(text) {
+    if (!/^[0-9]{1,78}$/.test(text) || BigInt(text) < 1n || BigInt(text) > ethers.MaxUint256) {
+      throw new Error("กรุณาระบุ ID เป็นจำนวนเต็มบวก");
+    }
+    return BigInt(text);
+  }
+
+  function ethAmount(text, allowZero = false) {
+    if (!/^\d+(\.\d{1,18})?$/.test(text)) throw new Error("กรอกจำนวน ETH เช่น 0.02 (ทศนิยมได้สูงสุด 18 ตำแหน่ง)");
+    const amount = ethers.parseEther(text);
+    if ((!allowZero && amount === 0n) || amount > ethers.MaxUint256) throw new Error("จำนวน ETH อยู่นอกช่วงที่รองรับ");
+    return amount;
+  }
+
+  function dateValue(id) {
+    const timestamp = new Date(value(id)).getTime();
+    if (!Number.isFinite(timestamp) || timestamp < 0) throw new Error("วันและเวลาไม่ถูกต้อง");
+    return BigInt(Math.floor(timestamp / 1000));
+  }
+
+  async function loadBalance(blockTag = "latest") {
+    if (!account) return;
+    try {
+      const amount = await getReadContract().withdrawable(account, { blockTag });
+      $("balance").hidden = false;
+      $("balance").textContent = "ยอดที่ถอนได้: " + eth(amount);
+      $("withdraw").hidden = amount === 0n;
+    } catch (error) {
+      $("balance").hidden = false;
+      $("balance").textContent = "อ่านยอดถอนไม่สำเร็จ: " + errorText(error);
+      $("withdraw").hidden = true;
+    }
+  }
+
+  async function connectWallet() {
+    $("connect").disabled = true;
+    try {
+      const contract = getReadContract();
+      if (!window.ethereum) throw new Error("กรุณาติดตั้ง MetaMask");
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      if ((await provider.getNetwork()).chainId !== CHAIN_ID) throw new Error("เลือก Sepolia ใน MetaMask แล้วลองใหม่");
+      await window.ethereum.request({ method: "eth_requestAccounts" });
+      const signer = await provider.getSigner();
+      account = await signer.getAddress();
+      walletProvider = provider;
+      writeContract = contract.connect(signer);
+      message($("wallet"), "เชื่อมต่อแล้ว · " + account, "success");
+      message($("walletMessage"), "");
+      await Promise.all([loadBalance(), value("agreementId") ? loadAgreement() : Promise.resolve()]);
+    } catch (error) {
+      message($("walletMessage"), errorText(error), "error");
+    } finally {
+      $("connect").disabled = false;
+    }
+  }
+
+  async function transact(button, target, action) {
+    if (sending) {
+      message(target, "กำลังรอธุรกรรมก่อนหน้า");
+      return;
+    }
+    sending = true;
+    button.disabled = true;
+    try {
+      if (!writeContract) throw new Error("เชื่อม MetaMask ก่อนส่งธุรกรรม");
+      if ((await walletProvider.getNetwork()).chainId !== CHAIN_ID) throw new Error("เลือก Sepolia ใน MetaMask");
+      message(target, "ตรวจสอบและยืนยันธุรกรรมใน MetaMask");
+      const tx = await action();
+      message(target, "กำลังรอการยืนยัน " + tx.hash);
+      const receipt = await tx.wait();
+      message(target, "บันทึกสำเร็จ " + receipt.hash, "success");
+      return receipt;
+    } catch (error) {
+      message(target, errorText(error), "error");
+    } finally {
+      sending = false;
+      button.disabled = false;
+    }
+  }
+
+  async function loadAgreement(blockTag = "latest", clearMessage = true) {
+    const sequence = ++lookupSequence;
+    const root = $("agreementResult");
+    if (clearMessage) message($("agreementMessage"), "");
+    root.textContent = "กำลังอ่านสัญญาจาก Infura...";
+    try {
+      const id = positiveId(value("agreementId"));
+      const contract = getReadContract();
+      const block = await readProvider.getBlock(blockTag);
+      if (!block) throw new Error("ยังไม่พบบล็อก กดดูสัญญาอีกครั้งเพื่อรีเฟรช");
+      const atBlock = { blockTag: block.number };
+      const [agreement, settlement, payments] = await Promise.all([
+        contract.getAgreement(id, atBlock), contract.getSettlement(id, atBlock), contract.getPayments(id, atBlock)
+      ]);
+      const property = await contract.getProperty(agreement.propertyId, atBlock);
+      if (sequence !== lookupSequence) return;
+      root.replaceChildren();
+      renderAgreement(root, id, property, agreement, settlement, payments, BigInt(block.timestamp));
+    } catch (error) {
+      if (sequence === lookupSequence) {
+        root.replaceChildren();
+        addText(root, "p", errorText(error), "error");
+      }
+    }
+  }
+
+  function renderAgreement(root, id, property, agreement, settlement, payments, now) {
+    const status = Number(agreement.status);
+    const ended = now >= agreement.endsAt;
+    const card = addText(root, "article", "", "record");
+    addText(card, "h3", "สัญญา #" + id + " · " + property.name + " (ทรัพย์สิน #" + agreement.propertyId + ")");
+    addText(card, "p", "สถานะ: " + statusNames[status] + (ended ? " · ครบกำหนดแล้ว" : ""));
+    addText(card, "p", "เจ้าของห้อง: " + agreement.landlord + (agreement.landlordConfirmed ? " · ยืนยันแล้ว" : " · รอยืนยัน"));
+    addText(card, "p", "ผู้เช่า: " + agreement.tenant + (agreement.tenantConfirmed ? " · ยืนยันแล้ว" : " · รอยืนยัน"));
+    addText(card, "p", "ผู้ตัดสิน: " + agreement.arbitrator);
+    addText(card, "p", "เริ่ม " + dateTime(agreement.startsAt) + " · สิ้นสุด " + dateTime(agreement.endsAt));
+    addText(card, "p", "ค่าเช่า " + eth(agreement.rent) + " ต่องวด · ชำระแล้ว " + payments.length + "/" + agreement.installments);
+    addText(card, "p", "เงินประกัน " + eth(agreement.securityDeposit) + " · ค้างในสัญญา " + eth(agreement.depositHeld));
+    addText(card, "p", "เงื่อนไข: " + agreement.terms);
+    if (settlement.inspection) {
+      addText(card, "p", "ผลตรวจห้อง: " + settlement.inspection);
+      addText(card, "p", "เสนอคืน " + eth(settlement.proposedRefund) + " · เสนอหัก " + eth(agreement.securityDeposit - settlement.proposedRefund));
+    }
+    if (settlement.disputeReason) {
+      addText(card, "p", "ข้อพิพาท: " + settlement.disputeReason);
+      addText(card, "p", "เปิดโดย " + settlement.disputedBy, "muted");
+    }
+    if (status === STATUS.Settled) {
+      addText(card, "p", "ยอดคืน " + eth(settlement.finalRefund) + " · ยอดหัก " + eth(agreement.securityDeposit - settlement.finalRefund), "success");
+      addText(card, "p", "ผลอนุมัติ: " + settlement.decision);
+      addText(card, "p", "อนุมัติโดย " + settlement.decidedBy, "muted");
+    }
+    addText(card, "h3", "ประวัติชำระค่าเช่า");
+    if (payments.length) {
+      const list = addText(card, "ol", "");
+      payments.forEach(payment => addText(list, "li", eth(payment.amount) + " · " + dateTime(payment.paidAt)));
+    } else {
+      addText(card, "p", "ยังไม่มีการชำระค่าเช่า", "muted");
+    }
+    addAgreementActions(card, id, agreement, payments.length, status, ended);
+  }
+
+  function addAgreementActions(card, id, agreement, paymentCount, status, ended) {
+    const landlord = same(agreement.landlord);
+    const tenant = same(agreement.tenant);
+    function action(text, send, className = "") {
+      const button = addText(card, "button", text, className);
+      button.type = "button";
+      button.addEventListener("click", () => sendAgreementAction(button, id, send));
+    }
+    if (status === STATUS.Pending && !ended &&
+        ((landlord && !agreement.landlordConfirmed) || (tenant && !agreement.tenantConfirmed))) {
+      action("ยืนยันเงื่อนไขสัญญา", () => writeContract.confirmAgreement(id));
+    }
+    if ((landlord || tenant) && (status === STATUS.Pending || status === STATUS.Confirmed)) {
+      action("ยกเลิกสัญญาที่ยังไม่ฝากเงิน", () => writeContract.cancelUnfunded(id), "secondary");
+    }
+    if (tenant && !ended && status === STATUS.Confirmed) {
+      action("ฝากเงินประกัน " + eth(agreement.securityDeposit), () => writeContract.fundDeposit(id, { value: agreement.securityDeposit }));
+    }
+    if (tenant && !ended && status === STATUS.Funded && BigInt(paymentCount) < agreement.installments) {
+      action("ชำระค่าเช่างวด " + (paymentCount + 1), () => writeContract.payRent(id, { value: agreement.rent }));
+    }
+    if (landlord && ended && status === STATUS.Funded) {
+      settlementForm(card, id, "บันทึกผลตรวจห้อง", "ผลตรวจห้องและเหตุผลการหัก (ถ้ามี)", (refund, note) =>
+        writeContract.recordInspection(id, refund, note), agreement.depositHeld);
+    }
+    if (tenant && status === STATUS.Inspected) {
+      action("อนุมัติยอดคืนและยอดหัก", () => writeContract.approveRefund(id));
+    }
+    if ((tenant || landlord) && ended && (status === STATUS.Funded || status === STATUS.Inspected)) {
+      settlementForm(card, id, "เปิดข้อพิพาท", "เหตุผลที่โต้แย้ง", (_, reason) => writeContract.openDispute(id, reason));
+    }
+    if (same(agreement.arbitrator) && status === STATUS.Disputed) {
+      settlementForm(card, id, "บันทึกคำตัดสิน", "เหตุผลประกอบคำตัดสิน", (refund, decision) =>
+        writeContract.resolveDispute(id, refund, decision), agreement.depositHeld);
+    }
+  }
+
+  function settlementForm(parent, id, actionName, noteLabel, send, maxRefund) {
+    const form = addText(parent, "form", "", "action-form");
+    function field(tag, labelText) {
+      const label = addText(form, "label", labelText);
+      const input = document.createElement(tag);
+      input.required = true;
+      label.append(input);
+      return input;
+    }
+    let refundInput;
+    if (maxRefund !== undefined) {
+      refundInput = field("input", "ยอดคืนผู้เช่า (ETH) · สูงสุด " + eth(maxRefund));
+      refundInput.inputMode = "decimal";
+    }
+    const noteInput = field("textarea", noteLabel);
+    const button = addText(form, "button", actionName);
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      sendAgreementAction(button, id, () => {
+        const refund = refundInput ? ethAmount(refundInput.value.trim(), true) : 0n;
+        if (maxRefund !== undefined && refund > maxRefund) throw new Error("ยอดคืนสูงกว่าเงินประกันที่ค้างอยู่");
+        const note = noteInput.value.trim();
+        if (!note) throw new Error("กรุณาระบุรายละเอียด");
+        return send(refund, note);
+      });
+    });
+  }
+
+  async function sendAgreementAction(button, id, send) {
+    const receipt = await transact(button, $("agreementMessage"), send);
+    if (!receipt) return;
+    const refresh = value("agreementId") === String(id) ? loadAgreement(receipt.blockNumber, false) : Promise.resolve();
+    await Promise.all([refresh, loadBalance(receipt.blockNumber)]);
+  }
+
+  $("connect").addEventListener("click", connectWallet);
+  $("withdraw").addEventListener("click", async () => {
+    const receipt = await transact($("withdraw"), $("walletMessage"), () => writeContract.withdraw(account));
+    if (receipt) await loadBalance(receipt.blockNumber);
+  });
+  $("searchAgreement").addEventListener("submit", event => {
+    event.preventDefault();
+    loadAgreement();
+    loadBalance();
+  });
+  $("propertyForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const target = $("propertyMessage");
+    const receipt = await transact(event.currentTarget.querySelector("button"), target, () =>
+      writeContract.registerProperty(value("name"), ethAmount(value("rent")), ethAmount(value("deposit"))));
+    const registered = receipt?.logs.find(log => log.fragment?.name === "PropertyRegistered");
+    if (registered) {
+      const id = registered.args.propertyId.toString();
+      $("propertyId").value = id;
+      message(target, "ลงทะเบียนทรัพย์สินสำเร็จ · Property ID " + id, "success");
+    }
+  });
+  $("createForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const target = $("createMessage");
+    const receipt = await transact(event.currentTarget.querySelector("button"), target, () =>
+      writeContract.createAgreement({
+        propertyId: positiveId(value("propertyId")), tenant: ethers.getAddress(value("tenant")),
+        arbitrator: ethers.getAddress(value("arbitrator")), startsAt: dateValue("startsAt"),
+        endsAt: dateValue("endsAt"), installments: BigInt(value("installments")), terms: value("terms")
+      }));
+    const created = receipt?.logs.find(log => log.fragment?.name === "AgreementCreated");
+    if (created) {
+      const id = created.args.agreementId.toString();
+      $("agreementId").value = id;
+      message(target, "สร้างสัญญาสำเร็จ · Agreement ID " + id, "success");
+      await loadAgreement(receipt.blockNumber);
+    }
+  });
+  window.ethereum?.on?.("accountsChanged", () => location.reload());
+  window.ethereum?.on?.("chainChanged", () => location.reload());
+</script>
+</body>
+</html>
